@@ -50,6 +50,16 @@ def compute_language_stats(file_path: Path, enc_gpt2, tok_llama3):
         len(tok_llama3.encode(line, add_special_tokens=False)) for line in lines
     )
 
+    gpt2_tpb = (gpt2_tokens / total_bytes * 1000) if total_bytes > 0 else 0.0
+    gpt2_tpg = (gpt2_tokens / total_graphemes) if total_graphemes > 0 else 0.0
+    llama3_tpb = (llama3_tokens / total_bytes * 1000) if total_bytes > 0 else 0.0
+    llama3_tpg = (llama3_tokens / total_graphemes) if total_graphemes > 0 else 0.0
+    eff_gain = (
+        ((gpt2_tokens - llama3_tokens) / gpt2_tokens * 100)
+        if gpt2_tokens > 0
+        else 0.0
+    )
+
     return {
         "lines": total_lines,
         "bytes": total_bytes,
@@ -57,18 +67,15 @@ def compute_language_stats(file_path: Path, enc_gpt2, tok_llama3):
         "chars": total_chars,
         "gpt2": {
             "tokens": gpt2_tokens,
-            "tok_per_1k_bytes": (gpt2_tokens / total_bytes) * 1000,
-            "tok_per_grapheme": gpt2_tokens / total_graphemes,
+            "tok_per_1k_bytes": gpt2_tpb,
+            "tok_per_grapheme": gpt2_tpg,
         },
         "llama3": {
             "tokens": llama3_tokens,
-            "tok_per_1k_bytes": (llama3_tokens / total_bytes) * 1000,
-            "tok_per_grapheme": llama3_tokens / total_graphemes,
+            "tok_per_1k_bytes": llama3_tpb,
+            "tok_per_grapheme": llama3_tpg,
         },
-        "efficiency_gain_pct": (
-            (gpt2_tokens - llama3_tokens) / gpt2_tokens
-        )
-        * 100,
+        "efficiency_gain_pct": eff_gain,
     }
 
 

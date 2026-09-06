@@ -62,7 +62,11 @@ def main():
     print()
 
     diff = total_intern - total_truth
-    pct_error = ((total_intern - total_truth) / total_truth) * 100
+    pct_error = (
+        ((total_intern - total_truth) / total_truth) * 100
+        if total_truth > 0
+        else 0.0
+    )
 
     print("--- Summary Statistics ---")
     print(f"Total Truth Word Count:   {total_truth}")

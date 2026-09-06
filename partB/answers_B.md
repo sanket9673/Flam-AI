@@ -46,13 +46,14 @@ $$\text{KV Cache Bytes per Token} = 2 \times 28 \times 8 \times 128 \times 2 = 1
 
 ### The "Honest Goodput" Calculation (Prefill Inflation Exposed):
 
-The intern computed `reported_tok_s` as:
-$$\text{Reported Throughput} = \frac{\text{Total Tokens (Prefill + Generation)}}{\text{Wall Clock Seconds}} = \frac{24 \times (3584 + 512)}{61.16} = \frac{98,304}{61.16} = \mathbf{1607.40 \text{ tok/s}}$$
+The **one misread column** in `bench_log.csv` that led to the flawed projection was **`reported_tok_s`**, which bundled parallel prompt prefill tokens together with sequential token generation:
+
+$$\text{Reported Throughput} (\text{reported\_tok\_s}) = \frac{\text{Total Tokens (Prefill + Generation)}}{\text{Wall Clock Seconds}} = \frac{24 \times (3584 + 512)}{61.16} = \frac{98,304}{61.16} = \mathbf{1607.40 \text{ tok/s}}$$
 
 The actual **Generation Goodput** (newly generated tokens delivered to clients):
 $$\text{Honest Goodput} = \frac{\text{Generated Tokens}}{\text{Wall Clock Seconds}} = \frac{24 \times 512}{61.16} = \frac{12,288}{61.16} = \mathbf{200.92 \text{ tok/s}}$$
 
-**Prefill accounted for 87.5% of the total tokens processed.** Because prompt prefill is compute-bound matrix multiplication executed in massive parallel bursts, bundling prefill tokens artificially inflated throughput by **8.00x** ($1607.4 / 200.92$). The sustainable token generation rate of the server was only ~200 tok/s.
+**Prefill accounted for 87.5% of the total tokens processed.** Because prompt prefill is compute-bound matrix multiplication executed in massive parallel bursts, bundling prefill tokens into `reported_tok_s` artificially inflated throughput by **8.00x** ($1607.4 / 200.92$). The sustainable token generation rate of the server was only ~200 tok/s.
 
 ---
 

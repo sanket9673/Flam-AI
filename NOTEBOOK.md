@@ -29,8 +29,12 @@ hin is 5.89x the fertility of eng (worse tokenization)
 | Kannada | `kan_Knda` | [`data/corpus_flores/kan.txt`](file:///Users/sanketkisanchavhan/Documents/Projects/starter_kit/data/corpus_flores/kan.txt) | 1,012 | 139,052 |
 | Tamil | `tam_Taml` | [`data/corpus_flores/tam.txt`](file:///Users/sanketkisanchavhan/Documents/Projects/starter_kit/data/corpus_flores/tam.txt) | 1,012 | 155,145 |
 
-### Caveats & Limitations
-This corpus consists of formal, professionally translated Wikipedia content. It may not accurately reflect tokenizer performance on 'casual' chat, code, or social media slang (to be addressed in future audits).
+### Caveats & Limitations: What This Corpus Cannot Tell You
+While FLORES-200 provides a rigorous, 1:1 sentence-aligned parallel baseline for formal translation, an empirical auditor must explicitly document the blind spots and boundaries of this dataset:
+1. **Conversational & Casual Speech**: The corpus consists of formal, professionally translated Wikipedia content. It contains zero colloquialisms, casual discourse markers, or informal phrasing (the exact gap addressed in Feature 5).
+2. **Code-Mixing & Script Transliteration (Hinglish / Kanglish)**: Real-world production traffic in India features heavy code-mixing (blending English with regional vocabularies) and Latin-script transliteration. FLORES-200 evaluates pure native orthography only.
+3. **Dialectal Diversity & Mobile Orthography**: Everyday user inputs include non-standard orthography, emoji usage, SMS abbreviations, and missing diacritics/viramas, which alter tokenization boundaries.
+4. **Specialized Domains**: Code, mathematical reasoning, tabular data, and legal/financial jargon exhibit distinct token densities not represented in general encyclopedic corpora.
 
 ## [Feature 2] - The Audit Report
 
