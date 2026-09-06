@@ -215,3 +215,77 @@ The intern made two fatal capacity planning errors in `REPORT_v0.md`:
 1. **Decode Goodput Metric**: $\text{effective\_decode\_goodput} = \frac{\sum \text{Generated Tokens}}{\text{Decode Wall Time}}$
 2. **Admission Control Limit**: Cap concurrent reserved tokens at **$\le 85\%$ of KV-cache budget** (max $\approx 21$ concurrent full 4096-length requests per L4 GPU).
 
+## [Feature 5] - Strategic Synthesis
+
+### The "Aha!" Moment: Evaluation Bandwidth is the Real Bottleneck
+
+In AI engineering projects, teams intuitively treat training compute as the primary constraint. However, rigorous mathematical modeling of human review bandwidth reveals that **Evaluation, not Training compute, is the critical bottleneck**:
+1. **The Human Capacity Ceiling**: With a budget of 10 hours/week over 3 weeks (30 total hours) and a standard 90-second review time per formal vs. casual pair, our total human validation capacity is strictly capped at **1,200 rows across the entire project**.
+2. **The Dilution Trap**: A naive 6-way uniform split yields only 200 samples per language, rendering the statistical power of human evaluation negligible.
+3. **The Anchor Strategy**: By focusing 100% of human review bandwidth ($N=600$ each) on **Hindi** (Indo-Aryan anchor) and **Kannada** (Dravidian anchor), we establish statistically robust ($p < 0.05$) calibration benchmarks. The remaining 4 languages (Tamil, Telugu, Bengali, Marathi) are governed via LLM-as-a-judge (Llama-3 70B), calibrated by the empirical Human-LLM agreement rate ($\alpha$).
+
+---
+
+### Reviewer Bandwidth Simulator Output (`partC/reviewer_simulator.py`)
+
+```text
+================================================================================
+FEATURE 5: HUMAN REVIEW BANDWIDTH & CAPACITY SIMULATOR
+================================================================================
+
+--- 1. HUMAN REVIEW CONSTRAINT ARITHMETIC ---
+Weekly Review Hours:         10.0 hours / week
+Project Duration:            3 weeks (30.0 total hours)
+Review Time per Sample:      90 seconds (1.5 minutes)
+Review Speed:                40.0 rows / hour
+Weekly Review Budget:        400 rows / week
+Total Project Budget:        1200 rows TOTAL across all 3 weeks
+
+--- 2. FEASIBILITY & ALLOCATION COMPARISON TABLE ---
+Allocation Strategy         Languages                   Rows/Lang/Wk    Total Rows/Lang   Statistical Power
+--------------------------------------------------------------------------------------------------------------
+Naive Uniform (All 6)       HI, KN, TA, TE, BN, MR      66.7            200               Underpowered (N=200)
+Anchor Strategy (2 Anchor)  HI, KN only                 200.0           600               Robust (N=600 each)
+--------------------------------------------------------------------------------------------------------------
+
+--- 3. STATISTICAL BLIND SPOT & CONFIDENCE CALCULATION ---
+Target Languages (6):        HI, KN, TA, TE, BN, MR
+Human-Audited Anchors (2):   HI, KN (33.3% linguistic coverage)
+LLM-as-Judge Transfer (4):   TA, TE, BN, MR (66.7% direct human blind spot)
+```
+
+---
+
+### Strategic Architectural Decision & Kill Criterion
+
+- **Selected Architecture**: **Path (A) — Synthetic Distillation (SFT)** using Llama-3 70B as a Teacher to generate conversational data, trained on our offline A100 cluster. Preserves FLM-4B serving latency (+0ms) and GPU memory footprint (+0 GB VRAM).
+- **Day-3 Kill Criterion**:
+  > *If the Teacher model (Llama-3 70B) cannot produce distinct casual Hindi and Kannada variations that pass human screening (>70% human approval) by the end of Day 3 (72 hours from kickoff), immediately terminate Path (A) and pivot to Path (C) (Prompt-based few-shot system instructions).*
+
+## Dead Ends & Course Corrections
+
+Throughout the forensic audit and benchmarking process, several initial engineering intuitions were evaluated and discarded based on empirical evidence:
+
+1. **Dead End 1: Using 'Tokens per Character' as an Indic Normalization Metric**
+   - *Initial Attempt*: We initially tested character counts (`len(text)`) as an alternative denominator to escape whitespace splitting bugs.
+   - *Course Correction*: Discarded because Unicode normalization differences (NFC vs NFD) and combining diacritic characters (matras, viramas, nuktas) introduce character-count variances that do not map to byte payloads or human visual units. We pivoted to **Tokens / UTF-8 Byte** (economic payload) and **Tokens / Grapheme Cluster (`\X`)** (visual perceptual units).
+
+2. **Dead End 2: Naive Uniform Split of Human Review Bandwidth (6 Languages)**
+   - *Initial Attempt*: Proposed distributing the 1,200 human review slots evenly across all 6 target languages (200 samples each).
+   - *Course Correction*: Discarded after running `partC/reviewer_simulator.py`. An $N=200$ sample size is statistically underpowered to detect nuanced tone shifts with $p < 0.05$ confidence. We pivoted to the **Anchor Language Strategy**, allocating $N=600$ reviews each to Hindi and Kannada, while calibrating LLM-as-a-judge for Tamil, Telugu, Bengali, and Marathi via the empirical Trust Discount Factor ($\alpha$).
+
+3. **Dead End 3: Proposing a Cascaded 1B Rewriter for Casualization**
+   - *Initial Attempt*: Considered an external 1B parameter rewriter model to translate formal FLM-4B outputs to casual register.
+   - *Course Correction*: Discarded due to serving constraints identified in Part B. Adding a second model introduces 100ms+ sequential decode latency, consumes ~2.5 GB extra VRAM on the NVIDIA L4, and reduces GPU concurrency from 25 streams down to $<18$. SFT via synthetic distillation preserves the existing runtime footprint.
+
+---
+
+## Defense Prep: Counterfactuals & Live Q&A Readiness
+
+| Defense Question | Technical Counterfactual & Root Cause Answer |
+|---|---|
+| **Q1: What happens to our serving capacity if we switch the KV-cache to FP8?** | **Answer**: With FP8 precision (1 byte/element), the KV cache memory per token halves from **$112.00\text{ KiB}$ to $56.00\text{ KiB}$** ($2 \times 28 \times 8 \times 128 \times 1$). On our 12.08 GB budget, total token capacity doubles from **105,329 to 210,658 tokens**, increasing maximum 4096-length concurrency from **25 to 51 concurrent streams**. The underlying capacity math remains identical, but the memory headroom doubles. |
+| **Q2: Why not use a standard linguistic library like NLTK or spaCy for word counting?** | **Answer**: The concept of a whitespace-separated "word" is linguistically ill-defined for morphologically rich and agglutinative Indic scripts (e.g., Kannada, Tamil). In agglutinative languages, case markers and postpositions fuse into compound words, so "words per sentence" is fundamentally lower for the same semantic meaning. Using **UTF-8 Bytes** provides an objective, hardware-aligned economic ground truth, while **Unicode Grapheme Clusters (`\X`)** provide a true perceptual glyph metric. |
+| **Q3: If prompt prefill is compute-bound, why does overall throughput collapse at Batch 32 and 48?** | **Answer**: Because the GPU hits a hard KV-cache memory saturation ceiling at Batch 24 (93.3% utilization). At Batch 32 and 48, memory demand exceeds physical VRAM, forcing the engine to **preempt active sequences (7 and 23 preemptions)**. When preempted requests are resumed, the engine must recompute prefill from scratch. The thrashing overhead of redundant prefills completely wipes out compute-bound parallelism, causing latency to spike from 15.5s to 105.4s. |
+| **Q4: Why was the intern's initial claim of a 6x "Hindi Tax" so completely wrong?** | **Answer**: The intern made a classic methodological mistake: they confused **linguistic density** with **tokenization inefficiency**. Because Indic languages pack more morphemes per word, their token-per-word ratio was high in GPT-2. When evaluated under modern tokenizers (Llama-3) and normalized by information bytes, Hindi operates at **0.99x parity with English**. |
+

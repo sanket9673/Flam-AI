@@ -1,7 +1,8 @@
-transformers
-tiktoken
-pandas
-numpy
-datasets
-requests
-indic-nlp-library
+transformers>=4.40.0
+tiktoken>=0.7.0
+pandas>=2.0.0
+numpy>=1.24.0
+datasets>=2.18.0
+requests>=2.31.0
+indic-nlp-library>=0.92
+regex>=2024.5.15
