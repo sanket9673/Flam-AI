@@ -10,3 +10,5 @@ This repository documents the technical audit and experimentation on LLM tokeniz
 
 ## Log of AI Assisted Tasks
 - **Feature 0**: Project initialization, directory structure reorganization, baseline capture automation, and research notebook setup.
+- **Feature 1**: Multilingual evaluation corpus pipeline (`scripts/download_flores.py`) for extracting 1,012 parallel sentences across English, Hindi, Kannada, and Tamil from FLORES-200 devtest split.
+
