@@ -1,0 +1,7 @@
+transformers
+tiktoken
+pandas
+numpy
+datasets
+requests
+indic-nlp-library
