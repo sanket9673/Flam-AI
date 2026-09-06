@@ -173,3 +173,45 @@ The core insight that debunks the intern's "6x Indic penalty" is the distinction
 - **The Llama-3 Dividend**: The expanded 128k vocabulary provides massive token savings across all Indic scripts: **+65.8% for Hindi**, **+50.6% for Tamil**, and **+34.5% for Kannada**.
 - **Infra Standard**: The production monitoring metric for LLM token economy is officially standardized to **Tokens / UTF-8 Byte**.
 
+## [Feature 4] - Capacity Audit
+
+### The "Aha!" Moment: Prefill-Heavy Throughput vs. Sustainable Generation Goodput
+
+The intern made two fatal capacity planning errors in `REPORT_v0.md`:
+1. **The Prefill Inflation Illusion**: At Batch 24 (Prompt 3584, Gen 512), the intern reported **1,607.4 tok/s**. However, prompt prefill constituted **87.5% of all tokens** ($24 \times 3584 = 86,016\text{ tokens}$). Because prefill is compute-bound and processed in parallel matrix multiplications, bundling prefill tokens inflated the top-line number by **8.00x**. The honest generation goodput delivered to clients was only **200.92 tok/s**.
+2. **The Linear Scaling Hallucination**: The intern assumed throughput would scale linearly with batch size to ~3,200 tok/s at Batch 48. In reality, a single NVIDIA L4 (24GB VRAM) hits hard memory saturation at **Batch 24 (93.3% KV utilization)**. Pushing to Batch 32 and Batch 48 caused **KV-cache exhaustion and preemption thrashing (7 and 23 preemptions)**, causing throughput to collapse rather than scale.
+
+---
+
+### First-Principles KV-Cache Arithmetic (FLM-4B on NVIDIA L4)
+
+- **Model Specifications**: 4.2B parameters (dense), 28 layers, 8 KV heads (GQA), head dimension 128, fp16 precision.
+- **KV Cache Memory per Token**:
+  $$\text{KV Bytes / Token} = 2 \times 28 \times 8 \times 128 \times 2 = \mathbf{114,688 \text{ bytes}} = \mathbf{112.00 \text{ KiB / token}}$$
+- **VRAM Budget Breakdown (NVIDIA L4 24GB)**:
+  - Total Usable VRAM (`gpu_memory_utilization = 0.92`): **22.08 GB**
+  - Model Weights ($4.2\text{B} \times 2\text{ bytes}$): **8.40 GB**
+  - Non-KV Runtime Overhead: **1.60 GB**
+  - **Available KV-Cache Budget**: $22.08 - 8.40 - 1.60 = \mathbf{12.08 \text{ GB}}$ ($12,080,000,000\text{ bytes}$)
+  - **Total Token Capacity**: $12,080,000,000 / 114,688 = \mathbf{105,329 \text{ tokens}}$
+  - **Max Concurrent 4096-token Sequences**: $105,329 / 4096 = \mathbf{25.71 \rightarrow 25 \text{ full streams}}$
+
+---
+
+### Benchmark Audit: Prompt 3584 Sweep (Preemption & Saturation)
+
+| Batch Size | Prompt Len | Gen Len | Wall Time (s) | Reported Throughput | Honest Goodput | Preempted Seqs | KV Cache Util | Engine State |
+|---|---|---|---|---|---|---|---|---|
+| **4** | 3584 | 512 | 28.98s | 565.4 tok/s | 70.67 tok/s | 0 | 0.16 | Healthy |
+| **8** | 3584 | 512 | 36.30s | 902.6 tok/s | 112.84 tok/s | 0 | 0.31 | Healthy |
+| **16** | 3584 | 512 | 49.97s | 1311.4 tok/s | 163.94 tok/s | 0 | 0.62 | Healthy |
+| **24** | 3584 | 512 | 61.16s | **1607.4 tok/s** | **200.92 tok/s** | **0** | **0.93** | **Peak Capacity Ceiling** |
+| **32** | 3584 | 512 | 94.71s | 1384.0 tok/s | 172.99 tok/s | 7 | 0.97 | Preemption Thrashing |
+| **48** | 3584 | 512 | 151.41s | 1298.5 tok/s | 162.31 tok/s | 23 | 0.97 | Severe Thrashing |
+
+---
+
+### Sizing Guidelines & Golden Schedulability Metric
+1. **Decode Goodput Metric**: $\text{effective\_decode\_goodput} = \frac{\sum \text{Generated Tokens}}{\text{Decode Wall Time}}$
+2. **Admission Control Limit**: Cap concurrent reserved tokens at **$\le 85\%$ of KV-cache budget** (max $\approx 21$ concurrent full 4096-length requests per L4 GPU).
+
