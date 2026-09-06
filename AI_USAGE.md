@@ -28,6 +28,9 @@ This repository documents the comprehensive forensic audit and re-evaluation of 
 3. **Uniform vs. Anchor Human Review Allocation**:
    - *AI Suggestion*: AI initially proposed splitting 1,200 human review rows evenly across all 6 languages ($N=200$ each).
    - *Auditor Correction*: The auditor pointed out that $N=200$ is statistically underpowered, pivoting to the **Anchor Strategy** ($N=600$ each for Hindi and Kannada) with LLM-as-a-judge for the remaining 4 transfer languages.
+4. **Script Robustness and Error Handling**:
+   - *AI Suggestion*: The AI initially produced scripts without proper guards for empty lines or zero-division errors.
+   - *Auditor Correction*: The auditor mandated the implementation of defensive zero-division guards, robust error handling, and `if not line: continue` logic to ensure the audit pipeline would not crash during a live defense with arbitrary inputs.
 
 ---
 
